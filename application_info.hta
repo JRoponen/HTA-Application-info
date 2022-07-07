@@ -1,0 +1,382 @@
+<! Start >
+<!--***************************************************************************************************'
+'                                                                                                      '
+' Application list Version v1.2 22/02/2016                                                           '
+'                                                                                                      '
+' *****************************************************************************************************'
+' *****************************************************************************************************'
+'                                                                                                      '
+' This scripts lists main info of computer applications and their version information. User can also   ' 
+' select if uninstalling string is displayed.                                                          '
+'                                                                                                      '
+' *****************************************************************************************************'
+' ***************************************************************************************************-->
+<HTML>
+<HEAD>
+
+  <TITLE>Application Info</TITLE>
+  	<hta:application
+		VERSION        ="1.0" 
+		APPLICATIONNAME="Application_Info" 
+		BORDER         ="thin"
+		BORDERSTYLE    ="static"
+		INNERBORDER    ="no"
+		CAPTION        ="yes"
+		MAXIMIZEBUTTON ="no"
+		MINIMIZEBUTTON ="no"
+		SELECTION      ="yes"
+		SCROLL         ="yes"
+		SHOWINTASKBAR  ="yes"
+		SINGLEINSTANCE ="no"
+		SYSMENU        ="yes"		 
+		ID             ="rcad"
+	    CONTEXTMENU    ="yes"
+	    ICON           =""
+	    NAVIGABLE      ="yes"
+	    SCROLLFLAT     ="no"
+	    WINDOWSTATE    ="normal"		
+	</hta:application>
+
+</HEAD>
+<SCRIPT LANGUAGE="VBScript">
+Const HKEY_CLASSES_ROOT    = &H80000000           ' Constant value for HKEY_CLASSES_ROOT
+Const HKEY_CURRENT_USER    = &H80000001           ' Constant value for HKEY_CURRENT_USER
+Const HKEY_LOCAL_MACHINE   = &H80000002           ' Constant value for HKEY_LOCAL_MACHINE
+Const HKEY_USERS           = &H80000003           ' Constant value for HKEY_USERS
+Const HKEY_CURRENT_CONFIG  = &H80000005           ' Constant value for HKEY_CURRENT_CONFIG
+Const WINDOW_WIDTH = 700
+Const WINDOW_HEIGHT = 730
+Const BGRCOLOR = "#FADAFA"
+
+init_window()
+
+Sub init_window
+	window.resizeTo WINDOW_WIDTH,WINDOW_HEIGHT
+	screenWidth  = Document.ParentWindow.Screen.AvailWidth
+    screenHeight = Document.ParentWindow.Screen.AvailHeight
+    posLeft      = (screenWidth - WINDOW_WIDTH)/16
+	posTop       = (screenHeight - WINDOW_HEIGHT)*15/16   
+    window.moveTo posLeft, posTop	
+End Sub
+	
+Sub window_Onload
+    ' This sub is executed always when application starts	
+	'document.body.style.color = "White"
+	'document.body.style.filter = "progid:DXImageTransform.Microsoft.Gradient(GradientType=0, StartColorStr='#000000', EndColorStr='#E0A0AD')"
+    document.getElementById("main_header").style.backgroundColor = BGRCOLOR	
+	document.getElementById("up_header").style.backgroundColor = BGRCOLOR
+	document.getElementById("low_header").style.backgroundColor = BGRCOLOR
+	document.getElementById("Computer_Name").value = "localhost"
+	document.getElementById("START_button").value = " Search " 
+	document.getElementById("Computer_Name").Focus
+End Sub 
+
+Sub Start_sub()
+          ' Set computer name variable value from user form field           
+           sComputerName = Computer_Name.value            
+           Clear_form sComputerName	 
+          ' Disable user configurable fields in user form
+           document.getElementById("START_button").Value = "Checking..."
+           document.getElementById("Computer_Name").disabled = true
+           document.getElementById("ShowUninstall").disabled = true 
+           document.getElementById("START_button").disabled = true
+	   ScreenUpdate
+           if (Ping(sComputerName) = "true" and sComputerName <> "" ) then
+		   	   execScript(sComputerName)
+           Else
+             ' Show message if computer is not in network or user has not given computer name
+             If sComputerName = "" Then
+               document.getElementById("Comp_Name").innerHTML = "No computer name given"
+             Else
+               document.getElementById("Comp_Name").innerHTML = "'" & sComputerName & "' is not in network"
+             End If
+           End if
+           ScreenUpdate
+           ' Enable user configurable fields in user form
+           document.getElementById("START_button").Value = "  Search  "
+           document.getElementById("Computer_Name").disabled = false
+           document.getElementById("ShowUninstall").disabled = false
+           document.getElementById("START_button").disabled = false
+		   document.getElementById("Computer_Name").Focus
+End Sub
+
+Sub execScript(sComputerName)
+		 Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & sComputerName & "\root\cimv2")
+		 If Err = 0 Then         
+		   Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & sComputerName & "\root\default:StdRegProv")
+		   If Err = 0 Then 
+			 Fill_form sComputerName
+		   Else 
+			 document.getElementById("Comp_Name").innerHTML = sComputerName & ": WMI error in \root\default:StdRegProv, Error Code: " & Err & " ," & Err.Description
+		   End If
+		 Else
+		   document.getElementById("Comp_Name").innerHTML = sComputerName & ": WMI error in \root\cimv2, Error Code: " & Err & " ," & Err.Description
+		 End If
+		 Err.Clear
+End Sub
+
+Sub Fill_form(sComputerName)
+' This sub fills fields in user dialog form
+    document.getElementById("app_list").innerHTML = Check_Applications(sComputerName)
+    ScreenUpdate
+    document.getElementById("Installed_Applications").innerHTML = "Installed Applications on " & sComputerName   
+    ScreenUpdate
+End Sub
+
+Sub Clear_form(sComputerName)
+' This sub clears all fields in user dialog form
+    Document.All.Computer_Name.Value                            = ""
+    document.getElementById("App_list").innerHTML               = ""
+    document.getElementById("Installed_Applications").innerHTML = ""
+End Sub
+
+Function Check_64bit_OS(Cname)
+' Check if 64 bit Windows OS
+Dim b64bit
+b64bit = False
+    Set objReg2 = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & Cname & "\root\default:StdRegProv")
+    strKeyPath2 = "SOFTWARE"
+    objReg2.EnumKey HKEY_LOCAL_MACHINE, strKeyPath2, arrSubKeys2
+    For Each Subkey2 in arrSubKeys2
+      If (InStr(Subkey2,"ow6432Node")) > 0 then
+        b64bit = True
+      End If
+    Next
+    Check_64bit_OS = b64bit 
+End Function
+
+Function Check_Applications(Cname)
+i = 0
+ApplicationList = ""
+ReDim Preserve arrApplications(0)
+' Read WMI application information from target computer registry and store it to the dynamic array.
+    Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & Cname & "\root\cimv2")
+    Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & Cname & "\root\default:StdRegProv")
+    strKeyPath = "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    objReg.EnumKey HKEY_LOCAL_MACHINE, strKeyPath, arrSubKeys
+    If Not IsNull(arrSubkeys) then
+     For Each Subkey in arrSubKeys
+      strValueNameDescription = "DisplayName"
+      strValueNameVersion     = "DisplayVersion"
+      strvalueNameUninstall   = "UninstallString" 
+      objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath & "\" & Subkey, strValueNameDescription, strValueDescription
+      objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath & "\" & Subkey, strValueNameVersion, strValueVersion
+      objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath & "\" & Subkey, strvalueNameUninstall, strvalueUninstall
+      ' Check if 'DisplayName' value of item is found in registry 
+      If Not IsNull(strValueDescription) Then
+        ' If user checked 'Show uninstall string' selection then add this information.
+        If Document.All.ShowUninstall.checked = true then
+          ReDim Preserve arrApplications(uBound(arrApplications) + 1)
+          If strValueVersion <> "" Then
+           arrApplications(i) = "<table cellspacing=0 STYLE='font-size: 11px;font-family:Tahoma;'><tr><td colspan = 3>" & Convertcase(strValueDescription) & "<b> Ver: </b>" & strValueVersion & "</td></tr><tr><td width= 30></td><td style='white-space:nowrap;vertical-align:top'><b> Uninstall String: </b></td><td width=505 style='word-break:break-all;'>" & strvalueUninstall & "</td></tr></table>"
+          Else 
+           arrApplications(i) = "<table cellspacing=0 STYLE='font-size: 11px;font-family:Tahoma;'><tr><td colspan = 3>" & Convertcase(strValueDescription) & "</td></tr><tr><td width= 30></td><td style='white-space:nowrap;vertical-align:top'><b> Uninstall String: </b></td><td width=505 style='word-break:break-all;'>" & strvalueUninstall & "</td></tr></table>"
+          End If
+          i=i+1
+        Else
+          ReDim Preserve arrApplications(uBound(arrApplications) + 1)
+          If strValueVersion <> "" Then
+            arrApplications(i) = Convertcase(strValueDescription) & "<b> Ver: </b>" & strValueVersion
+          Else
+            arrApplications(i) = Convertcase(strValueDescription)
+          End If
+          i=i+1
+        End If
+      End If
+    Next
+   End If
+If Check_64bit_OS(Cname) Then
+' If 64 bit Windows OS then Read WMI 32 bit application information from target computer registry and add it to the dynamic array. 
+    Set objReg=GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & Cname & "\root\default:StdRegProv")
+    strKeyPath = "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    objReg.EnumKey HKEY_LOCAL_MACHINE, strKeyPath, arrSubKeys
+    If Not IsNull(arrSubkeys) then
+     For Each Subkey in arrSubKeys
+      strValueNameDescription = "DisplayName"
+      strValueNameVersion     = "DisplayVersion"
+      strvalueNameUninstall   = "UninstallString" 
+      objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath & "\" & Subkey, strValueNameDescription, strValueDescription
+      objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath & "\" & Subkey, strValueNameVersion, strValueVersion
+      objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath & "\" & Subkey, strvalueNameUninstall, strvalueUninstall
+      ' Check if 'DisplayName' value of item is found in registry 
+      If Not IsNull(strValueDescription) Then
+        ' If user checked 'Show uninstall string' selection then add this information.
+        If Document.All.ShowUninstall.checked = true then
+          ReDim Preserve arrApplications(uBound(arrApplications) + 1)
+          If strValueVersion <> "" Then
+           arrApplications(i) = "<table cellspacing=0 STYLE='font-size: 11px;font-family:Tahoma;'><tr><td colspan = 3>" & Convertcase(strValueDescription) & "<b> Ver: </b>" & strValueVersion & " (32 bit)</td></tr><tr><td width= 30></td><td style='white-space:nowrap;vertical-align:top'><b> Uninstall String: </b></td><td width=505 style='word-break:break-all;'>" & strvalueUninstall & "</td></tr></table>"
+          Else
+           arrApplications(i) = "<table cellspacing=0 STYLE='font-size: 11px;font-family:Tahoma;'><tr><td colspan = 3>" & Convertcase(strValueDescription) & " (32 bit)</td></tr><tr><td width= 30></td><td style='white-space:nowrap;vertical-align:top'><b> Uninstall String: </b></td><td width=505  style='word-break:break-all;'>" & strvalueUninstall & "</td></tr></table>"
+          End If
+          i=i+1
+        Else
+          ReDim Preserve arrApplications(uBound(arrApplications) + 1)
+          If strValueVersion <> "" Then
+            arrApplications(i) = Convertcase(strValueDescription) & "<b> Ver: </b>" & strValueVersion & " (32 bit)"
+          Else 
+            arrApplications(i) = Convertcase(strValueDescription) & " (32 bit)"
+          End If
+          i=i+1
+        End If
+      End If
+    Next
+   End If
+End If
+' Sort array items in alphabetical order
+    for i = UBound(arrApplications) - 1 To 0 Step -1
+      for j= 0 to i
+        if arrApplications(j)>arrApplications(j+1) then
+          temp=arrApplications(j+1)
+          arrApplications(j+1)=arrApplications(j)
+          arrApplications(j)=temp
+        end if
+      next
+    next
+' Convert array to string
+    for x = 0 to uBound(arrApplications)
+      ApplicationList = AddToListhtml(ApplicationList, arrApplications(x)) 
+    Next 
+' Return string in function name
+    Check_Applications = ApplicationList
+End Function
+
+Function Ping(strHost)
+       Dim oPing, oRetStatus, bReturn
+       Set oPing = GetObject("winmgmts:{impersonationLevel=impersonate}").ExecQuery("SELECT * FROM Win32_PingStatus WHERE address='" & strHost & "'")
+       For Each oRetStatus In oPing
+         If IsNull(oRetStatus.StatusCode) Or oRetStatus.StatusCode <> 0 Then
+           bReturn = "false"
+         Else
+           bReturn = "true"
+         End If
+         Set oRetStatus = Nothing
+       Next
+       Set oPing = Nothing 
+       Ping = bReturn
+End Function
+
+Function WMIDateStringToDate(dtmBootup)
+' This functions transfers date form of WMI to date datatype and then returns it in function name
+       WMIDateStringToDate = CDate(Mid(dtmBootup, 5, 2) & "/" & Mid(dtmBootup, 7, 2) & "/" & Left(dtmBootup, 4) & " " & Mid (dtmBootup, 9, 2) & ":" & Mid(dtmBootup, 11, 2) & ":" & Mid(dtmBootup, 13, 2))
+End Function
+
+Function AddToList(strlist, strname)
+' Check if input string is not empty and then add input string to the string separated by space character. If input string empty then return unchanged imput string. 
+       If strlist <> "" then
+         strlist  = strlist & " " & strname
+       Else  
+         strlist = strname
+       End If
+' Return string in function name
+       AddToList = strlist
+End Function
+
+Function AddToListhtml(strlist, strname)
+' Check if input string is not empty and then add input string to the string separated by html line feed. If input string empty then return unchanged input string. 
+       If strlist <> "" then
+         strlist  = strlist & " <br> " & strname
+       Else  
+         strlist = strname
+       End IF
+' Return string in function name
+       AddToListhtml = strlist
+End Function
+
+Function Clear_user_name(ProfilePath)
+' This function saparates user name from profile path and then returns user name in function name
+       i = len(ProfilePath)
+       do until mid(ProfilePath,i,1) = "\"
+         i=i-1
+       loop
+       Clear_user_name = right (ProfilePath, len(ProfilePath)-i)
+End Function
+
+function Clear_String(sToClear) 
+'Remove space characters in the begining and the end of the string
+         sToClear = trim(sToClear)
+'Remove All Back Slash Characters
+         sToClear = Remove_Char(sToClear,92)
+'Remove All Asterisk Characters
+         sToClear = Remove_Char(sToClear,42)
+'Remove All Forward Slash Characters
+         sToClear = Remove_Char(sToClear,47)
+'Remove All Colon Characters
+         sToClear = Remove_Char(sToClear,58)
+'Remove All Low Line Characters
+         sToClear = Remove_Char(sToClear,95)
+'Remove All Comma Characters
+         sToClear = Remove_Char(sToClear,44)
+'Remove All Quatitation Mark Characters
+         sToClear = Remove_Char(sToClear,34)
+'Remove All Interstring Spaces
+         sToClear = Remove_Char(sToClear,32)
+'Return cleaned string in function name
+       Clear_String = sToClear
+End function
+
+Function Remove_Char(sString,sAsciiChar)
+' This sub routine removes required characters from a string. Decimal Ascii value of characters to removed is bring in parameter.
+       ' Calculate lenght of the string
+       ilen = len(sString)
+       ' Walk all characters of the sting and if the characters is required to remove then copy left and right part of string to a new string and decrease lenght of string and walk index by one.  
+       for i = 1 to ilen
+         c=Mid(sString, i, 1)
+         if c = chr(sAsciiChar) then 
+           sString= left(sString, i-1) + right(sString, ilen-i)
+           i = i - 1
+           ilen = ilen - 1
+         end if 
+       next
+       ' Return cleaned string in function name
+       Remove_Char = sString
+End Function
+
+Function Convertcase(strItem)
+' Set first character in upper case and rest in lower case. 
+       strItem = UCase(Left(strItem,1)) & LCase(Mid(strItem,2))
+' Return string in function name
+       Convertcase = strItem
+End Function
+
+Sub ScreenUpdate()
+	'Screen updates in an HTA...
+	With CreateObject("WScript.Shell")
+	  .run "%comspec% /c exit", 0, true
+	End With
+End Sub
+
+</script>
+
+<body STYLE='font-family:Tahoma;'>
+<div align="center" STYLE='font-size:16px;' id="main_header" ><b> Application Information </b></div>
+
+<div align="left" id="up_header"><table cellspacing="0">
+<tr><td height=10></td></tr>
+<tr nowrap><td width=230  STYLE='font-size:11px;'><b>Computer name/IP</b></td>
+<td width="185"><input type="text" size="25" autocomplete="off" id="Computer_Name" maxlength = "36"></td><td width = 40></td>
+<td><table>
+<tr><td><input type="checkbox" name="ShowUninstall" style="height:10px; width:10px"></td>
+<td><font  STYLE='font-size:11px;'>Show Uninstall string</font></td></tr>
+<tr><td></td><td><font size="2" ></font></td></tr>
+</table></td></tr>
+<tr><td height = 10></td></tr>
+</table></div>
+
+<div align="left" id="low_header"><table cellspacing="0">
+<tr nowrap><td height=10 width=230></td>
+<td><input type="button" style="height:25px;width:185px" id="START_button" STYLE='font-size: 11px;' onClick="Start_sub"></td></tr>
+<tr><td height=10></td></tr>
+</table></div>
+
+<div align="left"><table cellspacing="0" STYLE='font-size:11px;'>
+<tr><td height=10></td></tr>
+<tr nowrap><td width=5></td><td valign="top" style="word-wrap:break-word" ><b><font id="Installed_applications"></font></b></td></tr>
+<tr><td width=5 ></td><td width=680><font id="App_list"></font></td></tr>
+</table></div>
+
+</body>
+</HTML>
+<!--***************************************************************************************************
+  Made by Janne Roponen 2013-2016                                               
+ ***************************************************************************************************-->
+<! End >
